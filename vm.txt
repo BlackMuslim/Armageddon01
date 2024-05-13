@@ -1,0 +1,50 @@
+# Define a Google Compute Engine instance
+resource "google_compute_instance" "eurohq_instance" {
+  name         = "eurohq-instance"
+  machine_type = "e2-micro"  
+  zone         = "europe-west1-b"  
+  boot_disk {
+    initialize_params {
+      image = "debian-cloud/debian-10"  # Choose the operating system image
+    }
+  }
+
+  network_interface {
+    network = google_compute_network.eurohq.self_link 
+    access_config {}  # Use ephemeral IP
+  }
+
+  metadata_startup_script = <<-EOF
+    #!/bin/bash
+    # Update and install Apache2
+    apt update
+    apt install -y apache2
+
+    # Start and enable Apache2
+    systemctl start apache2
+    systemctl enable apache2
+
+    # GCP Metadata server base URL and header
+    METADATA_URL="http://metadata.google.internal/computeMetadata/v1"
+    METADATA_FLAVOR_HEADER="Metadata-Flavor: Google"
+
+    # Use curl to fetch instance metadata
+    local_ipv4=$(curl -H "${METADATA_FLAVOR_HEADER}" -s "${METADATA_URL}/instance/network-interfaces/0/ip")
+    zone=$(curl -H "${METADATA_FLAVOR_HEADER}" -s "${METADATA_URL}/instance/zone")
+    project_id=$(curl -H "${METADATA_FLAVOR_HEADER}" -s "${METADATA_URL}/project/project-id")
+    network_tags=$(curl -H "${METADATA_FLAVOR_HEADER}" -s "${METADATA_URL}/instance/tags")
+
+    # Create a simple HTML page and include instance details
+    cat <<HTML > /var/www/html/index.html
+    <html><body>
+    <h2>Welcome to a Passportbro Website Company Internal.</h2>
+    <h3>Created by Blackmuslim a American Passportbro with a Moroccan wife. Poly life!</h3>
+    <p><b>Instance Name:</b> $(hostname -f)</p>
+    <p><b>Instance Private IP Address: </b> $local_ipv4</p>
+    <p><b>Zone: </b> $zone</p>
+    <p><b>Project ID:</b> $project_id</p>
+    <p><b>Network Tags:</b> $network_tags</p>
+    </body></html>
+    HTML
+  EOF
+}

@@ -1,0 +1,8 @@
+resource "google_storage_bucket" "bucket1" {
+  name          = "beanpieheaven"
+  location      = "southamerica-east1"
+  force_destroy = true
+
+}
+
+gcloud config set project gcpproject1-420819

@@ -1,0 +1,242 @@
+terraform {
+  required_providers {
+    google = {
+      source = "hashicorp/google"
+      version = "5.28.0"
+    }
+  }
+}
+
+provider "google" {
+  credentials = "orbital-falcon-423201-r4-bbebb78a93ed.json"
+  project     = "orbital-falcon-423201-r4"
+  region      = "us-central1"
+}
+
+resource "google_storage_bucket" "bucket1" {
+  name          = "beanpieheaven"
+  location      = "southamerica-east1"
+  force_destroy = true
+
+}
+
+# Define a Google Cloud VPC network
+resource "google_compute_network" "task3" {
+  name = "task3"
+}
+
+# Define subnets in different regions
+resource "google_compute_subnetwork" "indonesia" {
+  name          = "indonesia"
+  ip_cidr_range = "192.168.31.0/24"
+  region        = "asia-southeast1"
+  network       = google_compute_network.task3.self_link
+}
+
+resource "google_compute_subnetwork" "ohio" {
+  name          = "ohio"
+  ip_cidr_range = "172.16.82.0/24"
+  region        = "us-central1"
+  network       = google_compute_network.task3.self_link
+}
+
+resource "google_compute_subnetwork" "eurohq" {
+  name          = "eurohq"
+  ip_cidr_range = "10.82.1.0/24"
+  region        = "europe-west1"
+  network       = google_compute_network.task3.self_link
+}
+
+resource "google_compute_subnetwork" "huston" {
+  name          = "huston"
+  ip_cidr_range = "172.16.1.0/24"
+  region        = "us-east1"
+  network       = google_compute_network.task3.self_link
+}
+
+# Create peering connections between networks
+resource "google_compute_router_peer" "eurohq-to-huston" {
+  network             = google_compute_network.eurohq.self_link
+  peer_network        = google_compute_network.huston.self_link
+  auto_create_routes  = false
+  export_custom_routes = false
+  import_custom_routes = false
+}
+
+resource "google_compute_router_peer" "eurohq-to-ohio" {
+  network             = google_compute_network.eurohq.self_link
+  peer_network        = google_compute_network.ohio.self_link
+  auto_create_routes  = false
+  export_custom_routes = false
+  import_custom_routes = false
+}
+
+# Create VPN tunnel between indonesia and eurohq
+resource "google_compute_vpn_tunnel" "vpn_tunnel" {
+  name          = "indonesia-to-eurohq"
+  peer_ip       = "10.82.11.0/24"
+  shared_secret = "moroccan_secrets_never_come_easily"
+
+  peer_ip_address = "10..82.2.0/24"
+  target_vpn_gateway = google_compute_vpn_gateway.eurohq_gateway.id
+}
+
+# Define Cloud Router to advertise routes
+resource "google_compute_router" "eurohq_router" {
+  name            = "eurohq-router"
+  network         = google_compute_network.eurohq.self_link
+  region          = "europe-west1"
+
+  bgp {
+    asn               = 65001
+    advertise_mode    = "CUSTOM"
+    advertised_route_priority = 100
+  }
+}
+
+# Advertise routes to the internet through eurohq network
+resource "google_compute_router_nat" "eurohq_nat" {
+  name            = "eurohq-nat"
+  router          = google_compute_router.eurohq_router.name
+  region          = "europe-west1"
+
+  source_subnetwork_ip_ranges_to_nat = ["ALL_SUBNETWORKS_ALL_IP_RANGES"]
+  nat_ip_allocate_option              = "AUTO_ONLY"
+}
+
+# Define a route to send internet traffic through eurohq network
+resource "google_compute_router_nat_route" "eurohq_nat_route" {
+  router           = google_compute_router.eurohq_router.name
+  nat_gateway_name = google_compute_router_nat.eurohq_nat.name
+  region           = "europe-west1"
+  destination_range = "0.0.0.0/0"
+}
+
+# Create VPN gateway for eurohq
+resource "google_compute_vpn_gateway" "eurohq_gateway" {
+  project  = "orbital-falcon-423201-r4"
+  network  = google_compute_network.eurohq.self_link
+  region   = "europe-west1"
+  vpn_connections = [google_compute_vpn_tunnel.vpn_tunnel.name]
+}
+
+provider "google" {
+  project = "orbital-falcon-423201-r4"
+  alias = "waf"
+}
+
+resource "google_compute_firewall" "allow-rdp" {
+  provider = google.waf
+  name    = "allow-rdp"
+  network = "europehq"
+
+  allow {
+    protocol = "tcp"
+    ports    = ["3389"]
+  }
+
+  source_ranges = ["192.168.31.0/24"]
+}
+
+resource "google_compute_firewall" "allow-http" {
+  provider = google.waf
+  name    = "allow-http"
+  network = "europehq"
+
+  allow {
+    protocol = "tcp"
+    ports    = ["80"]
+  }
+
+  source_ranges = ["172.16.82.0/24", "172.16.1.0/24"]
+}
+
+resource "google_compute_firewall" "allow-vpn-out" {
+  provider = google.waf
+  name    = "allow-vpn-out"
+  network = "indonesia"
+
+  allow {
+    protocol = "all"
+  }
+
+  source_ranges      = ["10.82.1.0/24"]
+  destination_ranges = ["10.82.2.0/24"]
+}
+
+resource "google_compute_firewall" "http-ohio" {
+  provider = google.waf
+  name    = "allow-http-ohio"
+  network = "ohio"
+
+  allow {
+    protocol = "tcp"
+    ports    = ["80", "443", "22", "3389"]
+  }
+
+  source_ranges = ["0.0.0.0/0"]
+}
+
+resource "google_compute_firewall" "http-huston" {
+  provider = google.waf
+  name    = "allow-http-huston"
+  network = "huston"
+
+  allow {
+    protocol = "tcp"
+    ports    = ["80", "443", "22", "3389"]
+  }
+
+  source_ranges = ["0.0.0.0/0"]
+}
+
+# Define a Google Compute Engine instance
+resource "google_compute_instance" "eurohq_instance" {
+  name         = "eurohq-instance"
+  machine_type = "e2-micro"  
+  zone         = "europe-west1-b"  
+  boot_disk {
+    initialize_params {
+      image = "debian-cloud/debian-10"  # Choose the operating system image
+    }
+  }
+
+  network_interface {
+    network = google_compute_network.eurohq.self_link 
+    access_config {}  # Use ephemeral IP
+  }
+
+  metadata_startup_script = <<-EOF
+    #!/bin/bash
+    # Update and install Apache2
+    apt update
+    apt install -y apache2
+
+    # Start and enable Apache2
+    systemctl start apache2
+    systemctl enable apache2
+
+    # GCP Metadata server base URL and header
+    METADATA_URL="http://metadata.google.internal/computeMetadata/v1"
+    METADATA_FLAVOR_HEADER="Metadata-Flavor: Google"
+
+    # Use curl to fetch instance metadata
+    local_ipv4=$(curl -H "${METADATA_FLAVOR_HEADER}" -s "${METADATA_URL}/instance/network-interfaces/0/ip")
+    zone=$(curl -H "${METADATA_FLAVOR_HEADER}" -s "${METADATA_URL}/instance/zone")
+    project_id=$(curl -H "${METADATA_FLAVOR_HEADER}" -s "${METADATA_URL}/project/project-id")
+    network_tags=$(curl -H "${METADATA_FLAVOR_HEADER}" -s "${METADATA_URL}/instance/tags")
+
+    # Create a simple HTML page and include instance details
+    cat <<HTML > /var/www/html/index.html
+    <html><body>
+    <h2>Welcome to a Passportbro Website Company Internal.</h2>
+    <h3>Created by Blackmuslim a American Passportbro with a Moroccan wife. Poly life!</h3>
+    <p><b>Instance Name:</b> $(hostname -f)</p>
+    <p><b>Instance Private IP Address: </b> $local_ipv4</p>
+    <p><b>Zone: </b> $zone</p>
+    <p><b>Project ID:</b> $project_id</p>
+    <p><b>Network Tags:</b> $network_tags</p>
+    </body></html>
+    HTML
+  EOF
+}

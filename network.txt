@@ -1,0 +1,48 @@
+terraform {
+  required_providers {
+    google = {
+      source = "hashicorp/google"
+      version = "5.28.0"
+    }
+  }
+}
+
+provider "google" {
+  credentials = file("orbital-falcon-423201-r4-bbebb78a93ed.json")
+  project     = "orbital-falcon-423201-r4"
+  region      = "us-central1"
+}
+
+# Define a Google Cloud VPC network
+resource "google_compute_network" "task3" {
+  name = "task3"
+}
+
+# Define subnets in different regions
+resource "google_compute_subnetwork" "indonesia" {
+  name          = "indonesia"
+  ip_cidr_range = "192.168.31.0/24"
+  region        = "asia-southeast1"
+  network       = google_compute_network.task3.self_link
+}
+
+resource "google_compute_subnetwork" "ohio" {
+  name          = "ohio"
+  ip_cidr_range = "172.16.82.0/24"
+  region        = "us-central1"
+  network       = google_compute_network.task3.self_link
+}
+
+resource "google_compute_subnetwork" "eurohq" {
+  name          = "eurohq"
+  ip_cidr_range = "10.82.1.0/24"
+  region        = "europe-west1"
+  network       = google_compute_network.task3.self_link
+}
+
+resource "google_compute_subnetwork" "huston" {
+  name          = "huston"
+  ip_cidr_range = "172.16.1.0/24"
+  region        = "us-east1"
+  network       = google_compute_network.task3.self_link
+}
